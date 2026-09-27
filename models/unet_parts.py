@@ -172,6 +172,47 @@ class OutConv(nn.Module):
         return self.conv(x)
 
 
+class SpatialSelfAttention(nn.Module):
+    def __init__(self, dim, heads=8, dim_head=64, dropout=0.0):
+        super().__init__()
+        inner_dim = dim_head * heads
+        self.heads = heads
+        self.norm = nn.GroupNorm(8, dim)
+
+        self.to_q = nn.Linear(dim, inner_dim, bias=False)
+        self.to_k = nn.Linear(dim, inner_dim, bias=False)
+        self.to_v = nn.Linear(dim, inner_dim, bias=False)
+
+        self.to_out = nn.Sequential(
+            nn.Linear(inner_dim, dim),
+            nn.Dropout(dropout)
+        )
+
+    def forward(self, x):
+        b, c, h, w = x.shape
+        x_norm = self.norm(x)
+        x_flat = x_norm.view(b, c, -1).permute(0, 2, 1)
+
+        q = self.to_q(x_flat)
+        k = self.to_k(x_flat)
+        v = self.to_v(x_flat)
+
+        q = q.view(b, -1, self.heads, q.shape[-1] // self.heads).transpose(1, 2)
+        k = k.view(b, -1, self.heads, k.shape[-1] // self.heads).transpose(1, 2)
+        v = v.view(b, -1, self.heads, v.shape[-1] // self.heads).transpose(1, 2)
+
+        out = F.scaled_dot_product_attention(
+            q, k, v,
+            dropout_p=self.to_out[1].p if self.training else 0.0
+        )
+
+        out = out.transpose(1, 2).reshape(b, -1, out.shape[-1] * self.heads)
+        out = self.to_out(out)
+        out = out.permute(0, 2, 1).view(b, c, h, w)
+
+        return x + out
+
+
 # query_dim: canali dell'immagine
 # context_dim: dimensione degli embedding testuali
 class SpatialCrossAttention(nn.Module):

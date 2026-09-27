@@ -27,6 +27,7 @@ class Unet(nn.Module):
         self.attn_down1 = SpatialCrossAttention(base_channels * 2, context_dim)
 
         self.down2 = Down(base_channels * 2, base_channels * 4, time_emb_dim)
+        self.self_attn_down2 = SpatialSelfAttention(base_channels * 4)
         self.attn_down2 = SpatialCrossAttention(base_channels * 4, context_dim)
 
         # La bottleneck non effettua ulteriori riduzioni di risoluzione. L'immagine in questo
@@ -34,10 +35,12 @@ class Unet(nn.Module):
         # l'informazioni sui dettagli fini. E' il momento migliore per effettuare la cross attention,
         # perché qui si ragiona su concetti globali, fondendo la rappresentazione visiva compressa con i token testuali
         self.bott1 = DoubleConv(base_channels * 4, base_channels * 4, time_emb_dim)
+        self.self_attn_bott = SpatialSelfAttention(base_channels * 4)
         self.attn_bott1 = SpatialCrossAttention(base_channels * 4, context_dim)
         self.bott2 = DoubleConv(base_channels * 4, base_channels * 4, time_emb_dim)
 
         self.up1 = Up(base_channels * 6, base_channels * 2, time_emb_dim, bilinear=True)
+        self.self_attn_up1 = SpatialSelfAttention(base_channels * 2)
         self.attn_up1 = SpatialCrossAttention(base_channels * 2, context_dim)
         self.up2 = Up(base_channels * 3, base_channels, time_emb_dim, bilinear=True)
         self.attn_up2 = SpatialCrossAttention(base_channels, context_dim)
@@ -52,15 +55,19 @@ class Unet(nn.Module):
 
         skip2 = self.attn_down1(self.down1(skip1, t), context)
 
-        skip3 = self.attn_down2(self.down2(skip2, t), context)
+        x_down2 = self.down2(skip2, t)
+        x_down2 = self.self_attn_down2(x_down2)
+        skip3 = self.attn_down2(x_down2, context)
 
         # BOTTLENECK
         bott = self.bott1(skip3, t)
+        bott = self.self_attn_bott(bott)
         bott = self.attn_bott1(bott, context)
         bott = self.bott2(bott, t)
 
         # DECODER
         x = self.up1(bott, skip2, t)
+        x = self.self_attn_up1(x)
         x = self.attn_up1(x, context)
         x = self.up2(x, skip1, t)
         x = self.attn_up2(x, context)
