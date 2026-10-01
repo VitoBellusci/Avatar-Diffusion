@@ -253,3 +253,59 @@ class Encoder(nn.Module):
             x = layer(x, mask)
 
         return self.norm(x)
+
+class FullTextEncoder(nn.Module):
+    """
+    Wrapper che incapsula l'intera architettura del Text Encoder Transformer.
+    Riceve gli ID dei token, applica gli embedding, il positional encoding,
+    e fa passare il tensore attraverso i vari layer di attenzione.
+    Restituisce il 'context' [Batch_Size, Seq_Len, Embed_Dim] pronto per la U-Net.
+    """
+    def __init__(
+        self, 
+        vocab_size: int, 
+        max_seq_len: int, 
+        d_model: int = 128, 
+        num_layers: int = 3, 
+        heads: int = 4, 
+        d_ff: int = 256, 
+        dropout: float = 0.1
+    ):
+        super().__init__()
+        
+        # 1. Proiezione dai token testuali ai vettori densi
+        self.embed = InputEmbeddings(vocab_size, d_model)
+        
+        # 2. Iniezione dell'informazione posizionale (seni e coseni)
+        self.pos_enc = PositionalEncoding(dropout, max_seq_len, d_model)
+        
+        # 3. Costruzione dello stack di Transformer Layers
+        blocks = nn.ModuleList()
+        for _ in range(num_layers):
+            self_attention = MultiHeadAttentionBlock(d_model, heads, dropout)
+            feed_forward = FeedForwardBlock(d_model, d_ff, dropout)
+            
+            blocks.append(EncoderBlock(self_attention, feed_forward, dropout))
+            
+        # 4. Inizializzazione dell'Encoder finale (che include anche la LayerNorm finale)
+        self.encoder = Encoder(blocks)
+        
+    def forward(self, x, mask):
+        """
+        Args:
+            x: Tensore degli indici dei token testuali. Forma: [Batch, Seq_Len]
+            mask: Maschera per impedire l'attenzione sui token <PAD>.
+        
+        Returns:
+            out: Il contesto testuale codificato. Forma: [Batch, Seq_Len, d_model]
+        """
+        # Trasforma gli interi in embedding continui
+        out = self.embed(x)
+        
+        # Aggiunge il segnale posizionale
+        out = self.pos_enc(out)
+        
+        # Processa la sequenza attraverso i blocchi Transformer
+        out = self.encoder(out, mask)
+        
+        return out
