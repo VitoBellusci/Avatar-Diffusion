@@ -1,5 +1,4 @@
 import json
-import os
 from typing import List, Dict
 
 
@@ -17,14 +16,12 @@ class AvatarTokenizer:
         Costruisce il vocabolario, partendo esclusivamente dalle parole presenti nel training set.
         A qualsiasi parola trovata, per esempio in fase di inferenza, viene assegnata il pad <UNK>
         """
-        word_count = 0
         for text in training_texts:
             # Divide le parole del testo e le converte in minuscolo
             tokens = text.lower().split()
             for token in tokens:
                 if token not in self.vocab:
-                    word_count += 1
-                    self.vocab[token] = word_count
+                    self.vocab[token] = len(self.vocab)
 
         self.inverse_vocab = {v: k for k, v in self.vocab.items()}
 
